@@ -70,7 +70,7 @@ app.use(async (req, res, next) => {
     await connectDB();
     next();
   } catch (err) {
-    console.error("Database connection error:", err.message);
+    console.error("Database connection error:", err);
 
     return res.status(503).json({
       success: false,
