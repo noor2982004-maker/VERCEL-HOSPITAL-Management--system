@@ -52,12 +52,55 @@ const toDto = (a, doctor) => ({
 });
 
 // ---------------- POST /api/appointments/book ----------------
+
+const normalizeAppointmentTime = (time) => {
+  if (typeof time !== "string") return time;
+
+  const trimmedTime = time.trim();
+
+  // Keep existing 24-hour format, e.g. 09:00 or 21:00
+  if (/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmedTime)) {
+    return trimmedTime;
+  }
+
+  // Convert 12-hour format, e.g. 9:00 AM or 9:00 PM
+  const match = trimmedTime.match(
+    /^(1[0-2]|0?[1-9]):([0-5]\d)\s*(AM|PM)$/i
+  );
+
+  if (!match) return time;
+
+  let hours = Number(match[1]);
+  const minutes = match[2];
+  const period = match[3].toUpperCase();
+
+  if (period === "AM" && hours === 12) {
+    hours = 0;
+  } else if (period === "PM" && hours !== 12) {
+    hours += 12;
+  }
+
+  return `${String(hours).padStart(2, "0")}:${minutes}`;
+};
+
+
+
+
 export const bookAppointment = async (req, res, next) => {
   try {
-    const { error, value } = bookAppointmentSchema.validate(req.body, {
-      abortEarly: false,
-      stripUnknown: true,
-    });
+    
+const requestBody = {
+  ...req.body,
+  appointment_time: normalizeAppointmentTime(
+    req.body?.appointment_time
+  ),
+};
+
+const { error, value } = bookAppointmentSchema.validate(requestBody, {
+  abortEarly: false,
+  stripUnknown: true,
+});
+
     if (error) {
       return next({
         message: error.details.map((d) => d.message).join(", "),
