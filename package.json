@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@gradio/client": "^2.7.1",
+    "@vercel/node": "^27.0.0",
     "axios": "^1.16.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
