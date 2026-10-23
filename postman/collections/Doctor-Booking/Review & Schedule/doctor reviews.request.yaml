@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/doctors/6ac7d1b045faf2d151e9408b/reviews"
+method: GET
+order: 1000

@@ -1,0 +1,8 @@
+$kind: http-request
+name: http://localhost:3000/api/admin/attend/6ad3501ca6fc3d8adb1446c5
+url: http://localhost:3000/api/admin/attend/6ad3501ca6fc3d8adb1446c5
+method: PATCH
+body:
+  type: json
+  content: ""
+order: 3000

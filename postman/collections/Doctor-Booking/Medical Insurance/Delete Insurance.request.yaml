@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/insurance/6ad2b9ae1cdb748d65ffca2c"
+method: DELETE
+order: 4000

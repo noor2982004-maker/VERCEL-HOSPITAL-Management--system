@@ -1,0 +1,12 @@
+$kind: http-request
+url: "{{baseUrl}}/api/insurance"
+method: GET
+body:
+  type: json
+  content: ""
+auth:
+  type: bearer
+  credentials:
+    token: "{{auth_secret_0hzv}}"
+settings: {}
+order: 2000

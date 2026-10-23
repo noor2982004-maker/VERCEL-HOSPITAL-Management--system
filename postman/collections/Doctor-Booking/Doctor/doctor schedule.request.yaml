@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/doctors/6ac7a8d3bbb76880931b9f5d/schedule"
+method: GET
+order: 1000

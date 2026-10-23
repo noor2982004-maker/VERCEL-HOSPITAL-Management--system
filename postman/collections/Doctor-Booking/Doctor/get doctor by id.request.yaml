@@ -1,0 +1,6 @@
+$kind: http-request
+url: "{{baseUrl}}/api/doctors/:id"
+method: GET
+pathVariables:
+  id: 6ac7d1b045faf2d151e9408b
+order: 3000

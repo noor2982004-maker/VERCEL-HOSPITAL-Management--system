@@ -1,0 +1,6 @@
+workspace:
+  id: 0f530f4a-da79-4faa-8178-bef6451386fb
+cloudResources:
+  collections:
+    ../postman/collections/Doctor-Booking: 75837f9e-46f6-43a4-9e41-8441f63e547b
+    ../postman/collections/My Collection: 54124034-642091c7-6e64-4999-a2d5-632afd674e6c

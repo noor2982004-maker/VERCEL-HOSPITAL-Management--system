@@ -1,0 +1,26 @@
+$kind: http-request
+url: "{{baseUrl}}/api/auth/register"
+method: POST
+body:
+  type: json
+  content: "{\r
+
+    \  \"full_name\": \"Sama Zain\",\r
+
+    \  \"email\": \"doaa@gmail.com\",\r
+
+    \  \"phone\": \"01012345678\",\r
+
+    \  \"password\": \"Test12345\",\r
+
+    \  \"gender\": \"female\",\r
+
+    \  \"governorate\": \"Cairo\"\r
+
+    }"
+settings:
+  protocolVersion: auto
+  strictSSL: false
+  followRedirects: true
+  disableCookies: false
+order: 1000

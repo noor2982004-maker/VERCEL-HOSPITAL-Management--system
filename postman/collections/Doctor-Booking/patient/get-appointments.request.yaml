@@ -1,0 +1,8 @@
+$kind: http-request
+url: http://localhost:3000/api/user/appointments?tab=past
+method: GET
+headers:
+  Authorization: "{{json_web_token_0sws}}"
+queryParams:
+  tab: past
+order: 1000

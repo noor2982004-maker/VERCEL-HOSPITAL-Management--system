@@ -1,0 +1,19 @@
+$kind: http-request
+url: http://localhost:3000/api/appointments/book
+method: POST
+headers:
+  Authorization: "{{json_web_token_0sws}}"
+body:
+  type: json
+  content: "{\r
+
+    \  \"doctor_id\": \"6ac5abd87f46f5ec541c84dd\",\r
+
+    \  \"appointment_date\": \"2026-10-11\",\r
+
+    \  \"appointment_time\": \"18:30\",\r
+
+    \  \"notes\": \"كشف أول\"\r
+
+    }"
+order: 2000

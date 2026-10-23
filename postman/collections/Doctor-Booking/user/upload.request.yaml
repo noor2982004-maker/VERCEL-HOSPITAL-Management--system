@@ -1,0 +1,13 @@
+$kind: http-request
+url: http://localhost:3000/api/user/avatar
+method: PUT
+headers:
+  Authorization: "{{json_web_token_0sws}}"
+body:
+  type: formdata
+  content:
+    - type: file
+      key: avatar
+      src:
+        - /C:/Users/sama sayed/OneDrive/الصور/807953.jpg
+order: 4000

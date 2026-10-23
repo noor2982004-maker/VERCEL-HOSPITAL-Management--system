@@ -1,0 +1,6 @@
+$kind: http-request
+url: http://localhost:3000/api/auth/logout
+method: POST
+headers:
+  Authorization: "{{json_web_token_0qjc}}"
+order: 3000

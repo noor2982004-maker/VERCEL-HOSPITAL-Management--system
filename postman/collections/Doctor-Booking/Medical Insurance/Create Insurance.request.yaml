@@ -1,0 +1,21 @@
+$kind: http-request
+url: "{{baseUrl}}/api/insurance"
+method: POST
+body:
+  type: json
+  content: "{\r
+
+    \  \"insurance_company\": \"AXA\",\r
+
+    \  \"card_number\": \"1234567890123456\",\r
+
+    \  \"card_last4\": \"3456\",\r
+
+    \  \"expiry_date\": \"12/28\"\r
+
+    }"
+auth:
+  type: bearer
+  credentials:
+    token: "{{auth_secret_0hzv}}"
+order: 1000

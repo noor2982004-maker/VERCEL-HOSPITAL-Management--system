@@ -1,0 +1,6 @@
+$kind: http-request
+url: http://localhost:3000/api/user/get-profile
+method: GET
+headers:
+  Authorization: "{{json_web_token_0f8k}}"
+order: 1000

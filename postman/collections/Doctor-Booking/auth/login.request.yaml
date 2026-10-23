@@ -1,0 +1,18 @@
+$kind: http-request
+url: "{{baseUrl}}/api/auth/login"
+method: POST
+body:
+  type: json
+  content: '{ "email": "doaa@gmail.com", "password": "Test12345" }'
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 200) {
+          const json = pm.response.json();
+          if (json.data && json.data.token) {
+              pm.collectionVariables.set("json_web_token_1byt", json.data.token);
+              console.log("Token saved to collection variable json_web_token_1byt");
+          }
+      }
+    language: text/javascript
+order: 2000

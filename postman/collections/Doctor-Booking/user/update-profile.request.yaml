@@ -1,0 +1,15 @@
+$kind: http-request
+url: http://localhost:3000/api/user/profile
+method: PUT
+headers:
+  Authorization: "{{json_web_token_0f8k}}"
+body:
+  type: json
+  content: "{\r
+
+    \            \"phone\": \"01146892587\"\r
+
+    \r
+
+    }"
+order: 3000

@@ -1,0 +1,10 @@
+$kind: collection
+description: ""
+variables:
+  json_web_token_1byt: ""
+auth:
+  - id: 8b08f75a-418e-4d8a-89ae-222588c27028
+    type: bearer
+    name: bearer auth
+    credentials:
+      token: "{{json_web_token_1byt}}"
