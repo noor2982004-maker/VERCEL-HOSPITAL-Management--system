@@ -10,3 +10,6 @@ npm-debug.log*
 dist/
 .env.*
 !.env.example
+
+# 3. Local Postman workspace files that hold real tokens
+postman/environments/devora-ai.environment.yaml

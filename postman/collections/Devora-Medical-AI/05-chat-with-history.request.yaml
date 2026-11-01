@@ -1,0 +1,27 @@
+$kind: http-request
+name: Chat - With Conversation History
+order: 5000
+url: '{{baseUrl}}/chat'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Accept
+    value: application/json
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{DEVORA_AI_TOKEN}}'
+body:
+  type: json
+  content: |-
+    {
+      "request_id": "req_124",
+      "message": "كنت نايم عليه وبعد ما حركته بدأ يفك",
+      "history": [
+        { "role": "user", "content": "دراعي منمل" },
+        { "role": "assistant", "content": "التنميل بدأ فجأة ولا تدريجي؟" }
+      ],
+      "location": null
+    }

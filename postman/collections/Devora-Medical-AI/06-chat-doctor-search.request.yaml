@@ -1,0 +1,41 @@
+$kind: http-request
+name: Chat - Doctor Search
+order: 6000
+url: '{{baseUrl}}/chat'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Accept
+    value: application/json
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{DEVORA_AI_TOKEN}}'
+body:
+  type: json
+  content: |-
+    {
+      "message": "عايز دكتور قلب في القاهرة",
+      "location": {
+        "city": "Cairo",
+        "area": null,
+        "latitude": null,
+        "longitude": null
+      }
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200", function () {
+          pm.response.to.have.status(200);
+      });
+      pm.test("Doctor search intent", function () {
+          const json = pm.response.json();
+          pm.expect(["doctor_search", "specialty_search"]).to.include(json.intent);
+      });
+      pm.test("Recommended doctors is an array", function () {
+          pm.expect(pm.response.json().recommended_doctors).to.be.an("array");
+      });

@@ -20,14 +20,9 @@
  *   `GET /api/ai/chat/:jobId`. Warm answers (~15-35 s) usually need one poll at most.
  *   Emergencies are answered immediately and are never queued.
  *
- * Routes (routes/aiRoutes.js):
- *   import { chatWithAI, getChatResult } from "../controllers/aiController.js";
- *   router.post("/chat", aiLimiter, chatWithAI);
- *   router.get("/chat/:jobId", aiLimiter, getChatResult);
- *
- *   // Recommended: each non-emergency message can start a GPU. express-rate-limit
- *   // is already a dependency of this project.
- *   // const aiLimiter = rateLimit({ windowMs: 60_000, limit: 20 });
+ * Routes (routes/aiRoutes.js), both behind `protect` and a per-user rate limit:
+ *   POST /api/ai/chat          -> 200 complete | 202 pending | 400 | 401 | 502 failed | 503
+ *   GET  /api/ai/chat/:jobId   -> 200 complete | 202 pending | 400 | 401 | 404 expired | 502 failed | 503
  *
  * Environment (Vercel project settings; never commit values):
  *   DEVORA_AI_URL      https://mahmoudbadr238--devora-medical-ai-api.us-east.modal.run
@@ -61,10 +56,19 @@ const CALL_TIMEOUT_MS = 15_000;
 const POLL_INTERVAL_MS = 2_000;
 
 // Fixed public messages: nothing from the AI service or an exception reaches a client.
-const INVALID = { success: false, message: "Please enter a message" };
-const UNAVAILABLE = { success: false, message: "AI service is temporarily unavailable" };
+// `status` tells the app what to do next: "error" = retry later, "failed"/"expired" = stop
+// polling and ask the user to send the message again.
+const INVALID = { success: false, status: "error", message: "Please enter a message" };
+const INVALID_JOB = { success: false, status: "error", message: "Invalid job id" };
+const UNAVAILABLE = { success: false, status: "error", message: "AI service is temporarily unavailable" };
+const FAILED = {
+  success: false,
+  status: "failed",
+  message: "The AI could not answer this message. Please send it again.",
+};
 const EXPIRED = {
   success: false,
+  status: "expired",
   message: "This AI request has expired. Please send your message again.",
 };
 const PENDING_REPLY = {
@@ -170,19 +174,26 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const logFailure = (stage, status) => console.error(`[ai-gateway] ${stage} failed: status=${status ?? "none"}`);
 
+/** True when configured; otherwise logs the missing variable names (never values). */
+function checkConfig(cfg) {
+  const missing = [!cfg.url && "DEVORA_AI_URL", !cfg.token && "DEVORA_AI_TOKEN"].filter(Boolean);
+  if (missing.length) console.error(`[ai-gateway] config failed: missing ${missing.join(", ")}`);
+  return missing.length === 0;
+}
+
+// The AI answers a failed job with { status: "error" } and a 5xx code.
+const jobFailed = (polled) => polled.status >= 500 && polled.json?.status === "error";
+
 function guessLanguage(message) {
   return /[؀-ۿ]/.test(message) ? "ar" : "en";
 }
 
 /** POST /api/ai/chat */
 export const chatWithAI = async (req, res) => {
-  const cfg = config();
-  if (!cfg.url || !cfg.token) {
-    logFailure("config", null);
-    return res.status(503).json(UNAVAILABLE);
-  }
   const payload = buildPayload(req.body);
   if (!payload) return res.status(400).json(INVALID);
+  const cfg = config();
+  if (!checkConfig(cfg)) return res.status(503).json(UNAVAILABLE);
   const owner = ownerFor(req, cfg);
 
   try {
@@ -206,7 +217,7 @@ export const chatWithAI = async (req, res) => {
         return res.status(200).json(complete(polled.json.result));
       }
       logFailure("job", polled.status);
-      return res.status(503).json(UNAVAILABLE);
+      return jobFailed(polled) ? res.status(502).json(FAILED) : res.status(503).json(UNAVAILABLE);
     }
     return res.status(202).json(pending(jobId, guessLanguage(payload.message)));
   } catch {
@@ -217,13 +228,10 @@ export const chatWithAI = async (req, res) => {
 
 /** GET /api/ai/chat/:jobId */
 export const getChatResult = async (req, res) => {
-  const cfg = config();
-  if (!cfg.url || !cfg.token) {
-    logFailure("config", null);
-    return res.status(503).json(UNAVAILABLE);
-  }
   const jobId = req.params?.jobId ?? "";
-  if (!JOB_ID.test(jobId)) return res.status(404).json(EXPIRED);
+  if (!JOB_ID.test(jobId)) return res.status(400).json(INVALID_JOB);
+  const cfg = config();
+  if (!checkConfig(cfg)) return res.status(503).json(UNAVAILABLE);
 
   try {
     const polled = await callAI(cfg, "GET", `/chat/async/${jobId}`, null, ownerFor(req, cfg));
@@ -231,9 +239,10 @@ export const getChatResult = async (req, res) => {
       return res.status(200).json(complete(polled.json.result));
     }
     if (polled.status === 202) return res.status(202).json(pending(jobId));
+    // Unknown, expired and another user's job all look the same, by design.
     if (polled.status === 404) return res.status(404).json(EXPIRED);
     logFailure("result", polled.status);
-    return res.status(503).json(UNAVAILABLE);
+    return jobFailed(polled) ? res.status(502).json(FAILED) : res.status(503).json(UNAVAILABLE);
   } catch {
     logFailure("result", null);
     return res.status(503).json(UNAVAILABLE);

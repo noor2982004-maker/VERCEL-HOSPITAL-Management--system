@@ -1,0 +1,39 @@
+$kind: http-request
+name: Chat - Emergency Detection
+order: 4000
+url: '{{baseUrl}}/chat'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Accept
+    value: application/json
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{DEVORA_AI_TOKEN}}'
+body:
+  type: json
+  content: |-
+    {
+      "request_id": "req_emergency",
+      "message": "دراعي الشمال منمل ومش قادر أتكلم كويس دلوقتي",
+      "history": [],
+      "location": null
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200", function () {
+          pm.response.to.have.status(200);
+      });
+      pm.test("Emergency detected", function () {
+          const json = pm.response.json();
+          pm.expect(json.intent).to.eql("medical_emergency");
+          pm.expect(json.medical.emergency).to.be.true;
+          pm.expect(json.medical.urgency).to.eql("critical");
+          pm.expect(json.specialty).to.be.null;
+          pm.expect(json.recommended_doctors).to.be.an("array").that.is.empty;
+      });

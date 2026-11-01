@@ -1,0 +1,45 @@
+$kind: http-request
+name: Chat Async - Start Job
+order: 7000
+url: '{{baseUrl}}/chat/async'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Accept
+    value: application/json
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{DEVORA_AI_TOKEN}}'
+body:
+  type: json
+  content: |-
+    {
+      "message": "عندي ألم في الصدر من الصبح",
+      "history": [],
+      "location": null
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 or 202", function () {
+          pm.expect([200, 202]).to.include(pm.response.code);
+      });
+      const json = pm.response.json();
+      if (pm.response.code === 202) {
+          pm.test("Pending response has job_id", function () {
+              pm.expect(json.status).to.eql("pending");
+              pm.expect(json).to.have.property("job_id");
+              pm.expect(json.job_id).to.match(/^fc-[A-Za-z0-9]{8,64}$/);
+          });
+          // Save job_id for polling
+          pm.environment.set("job_id", json.job_id);
+      } else {
+          pm.test("Inline complete response (emergency)", function () {
+              pm.expect(json.status).to.eql("complete");
+              pm.expect(json.result).to.have.property("intent");
+          });
+      }

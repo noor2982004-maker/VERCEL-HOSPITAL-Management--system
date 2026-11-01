@@ -1,0 +1,53 @@
+$kind: http-request
+name: Chat - Synchronous
+order: 3000
+url: '{{baseUrl}}/chat'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Accept
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{DEVORA_AI_TOKEN}}'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{DEVORA_AI_TOKEN}}'
+body:
+  type: json
+  content: |-
+    {
+      "request_id": "req_001",
+      "message": "عندي صداع من امبارح",
+      "history": [],
+      "user_id": null,
+      "conversation_id": null,
+      "location": {
+        "city": "Cairo",
+        "area": null,
+        "latitude": null,
+        "longitude": null
+      }
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200", function () {
+          pm.response.to.have.status(200);
+      });
+      pm.test("Response has required fields", function () {
+          const json = pm.response.json();
+          pm.expect(json).to.have.property("request_id");
+          pm.expect(json).to.have.property("status");
+          pm.expect(json).to.have.property("intent");
+          pm.expect(json).to.have.property("language");
+          pm.expect(json).to.have.property("content");
+          pm.expect(json).to.have.property("medical");
+          pm.expect(json).to.have.property("follow_up");
+      });
+      pm.test("Status is success", function () {
+          pm.expect(pm.response.json().status).to.eql("success");
+      });

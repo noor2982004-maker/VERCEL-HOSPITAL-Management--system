@@ -1,0 +1,34 @@
+$kind: http-request
+name: Preprocess - Debug (Dev Only)
+order: 9000
+url: '{{baseUrl}}/preprocess'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Accept
+    value: application/json
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{DEVORA_AI_TOKEN}}'
+body:
+  type: json
+  content: |-
+    {
+      "message": "اسمي محمد ورقمي 01012345678 وعندي حرارة",
+      "history": [],
+      "location": null
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200", function () {
+          pm.response.to.have.status(200);
+      });
+      pm.test("PII is redacted in sanitized message", function () {
+          const json = pm.response.json();
+          pm.expect(json.sanitized_message).to.not.include("01012345678");
+      });

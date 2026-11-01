@@ -1,0 +1,8 @@
+$kind: collection
+name: Devora Medical AI
+variables:
+  apiToken: ""
+auth:
+  type: bearer
+  credentials:
+    token: "{{apiToken}}"

@@ -1,0 +1,33 @@
+$kind: http-request
+name: Chat Async - Poll Job Result
+order: 8000
+url: '{{baseUrl}}/chat/async/{{job_id}}'
+method: GET
+headers:
+  - key: Accept
+    value: application/json
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{DEVORA_AI_TOKEN}}'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 or 202", function () {
+          pm.expect([200, 202]).to.include(pm.response.code);
+      });
+      const json = pm.response.json();
+      if (pm.response.code === 200) {
+          pm.test("Job complete - has result", function () {
+              pm.expect(json.status).to.eql("complete");
+              pm.expect(json).to.have.property("result");
+              pm.expect(json.result).to.have.property("intent");
+              pm.expect(json.result).to.have.property("medical");
+          });
+      } else {
+          pm.test("Job still pending", function () {
+              pm.expect(json.status).to.eql("pending");
+          });
+      }

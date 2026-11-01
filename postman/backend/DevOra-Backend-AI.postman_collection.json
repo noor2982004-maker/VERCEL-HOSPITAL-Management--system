@@ -1,0 +1,741 @@
+{
+  "info": {
+    "name": "DevOra Backend - Medical AI Gateway",
+    "description": "Tests the DevOra Node.js backend on Vercel (NOT Modal directly).\n\n1. Import this collection and the 'DevOra Backend (Vercel)' environment, select the environment.\n2. Put a TEST patient's email/password in the environment's CURRENT values (never initial values), or paste an application JWT into backendJwt.\n3. Run 'Setup / Patient login' first: it stores the application JWT in backendJwt.\n\nbackendJwt is the backend's application JWT from /api/auth/login. It is NOT the Modal bearer token: the Modal token lives only in Vercel environment variables.\nFolder 3 starts GPU jobs on Modal; run it sparingly. Use synthetic messages only, never real patient data.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{backendJwt}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "pollAttempts",
+      "value": "0"
+    }
+  ],
+  "item": [
+    {
+      "name": "1 Setup",
+      "item": [
+        {
+          "name": "Backend health",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": {
+              "raw": "{{backendOrigin}}/health",
+              "host": [
+                "{{backendOrigin}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"backend and database are up\", () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.status).to.eql(\"ok\");",
+                  "  pm.expect(json.db).to.eql(\"connected\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Patient login (stores backendJwt)",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{patientEmail}}\",\n  \"password\": \"{{patientPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{backendBaseUrl}}/auth/login",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Uses the existing login endpoint. Use a synthetic TEST patient account."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test(\"token returned\", () => pm.expect(json.data && json.data.token).to.be.a(\"string\"));",
+                  "if (json.data && json.data.token) pm.environment.set(\"backendJwt\", json.data.token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 Validation and auth (no GPU)",
+      "item": [
+        {
+          "name": "Missing JWT -> 401",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"عايز دكتور قلب\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{backendBaseUrl}}/ai/chat",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "chat"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"not authenticated\", () => pm.expect(pm.response.json()).to.eql({ success: false, message: \"Not authenticated\" }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid JWT -> 401",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "not-a-real-jwt",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"عايز دكتور قلب\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{backendBaseUrl}}/ai/chat",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "chat"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"rejected\", () => pm.expect(pm.response.json().message).to.eql(\"Invalid or expired token\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Missing message -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{backendBaseUrl}}/ai/chat",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "chat"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"validation message\", () => pm.expect(pm.response.json().message).to.eql(\"Please enter a message\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid job id -> 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/ai/chat/not-a-job-id",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "chat",
+                "not-a-job-id"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"invalid job id\", () => pm.expect(pm.response.json().message).to.eql(\"Invalid job id\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown or expired job -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/ai/chat/fc-00000000000000000000000000",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "chat",
+                "fc-00000000000000000000000000"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"expired status\", () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.success).to.eql(false);",
+                  "  pm.expect(json.status).to.eql(\"expired\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 Emergency (answered inline, no GPU)",
+      "item": [
+        {
+          "name": "Chest pain -> immediate emergency",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"عندي ألم في الصدر من الصبح\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{backendBaseUrl}}/ai/chat",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "chat"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "pm.test(\"HTTP 200, completed immediately (no job)\", () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(json.status).to.eql(\"complete\");",
+                  "  pm.expect(json).to.not.have.property(\"job_id\");",
+                  "});",
+                  "pm.test(\"emergency, critical, no routine doctors\", () => {",
+                  "  pm.expect(json.ai.intent).to.eql(\"medical_emergency\");",
+                  "  pm.expect(json.ai.medical.urgency).to.eql(\"critical\");",
+                  "  pm.expect(json.ai.medical.emergency).to.eql(true);",
+                  "  pm.expect(json.ai.recommended_doctors).to.eql([]);",
+                  "});",
+                  "pm.test(\"reply text present\", () => pm.expect(json.reply).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 AI chat (starts GPU jobs)",
+      "item": [
+        {
+          "name": "Arabic doctor search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"عايز دكتور قلب\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{backendBaseUrl}}/ai/chat",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "chat"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function checkComplete(json) {",
+                  "  pm.test(\"complete: success, reply and structured ai\", () => {",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "    pm.expect(json.status).to.eql(\"complete\");",
+                  "    pm.expect(json.reply).to.be.a(\"string\").and.not.empty;",
+                  "    [\"request_id\", \"status\", \"intent\", \"language\", \"content\", \"medical\", \"follow_up\", \"specialty\", \"recommended_doctors\"]",
+                  "      .forEach((k) => pm.expect(json.ai, \"ai.\" + k).to.have.property(k));",
+                  "    pm.expect(json.ai.recommended_doctors).to.be.an(\"array\");",
+                  "  });",
+                  "}",
+                  "function checkPending(json) {",
+                  "  pm.test(\"pending: job id saved for polling\", () => {",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "    pm.expect(json.status).to.eql(\"pending\");",
+                  "    pm.expect(json.job_id).to.match(/^fc-[A-Za-z0-9]{8,64}$/);",
+                  "    pm.expect(json.reply).to.be.a(\"string\").and.not.empty;",
+                  "  });",
+                  "  pm.environment.set(\"job_id\", json.job_id);",
+                  "}",
+                  "const json = pm.response.json();",
+                  "pm.test(\"HTTP 200 (complete) or 202 (pending)\", () => pm.expect([200, 202]).to.include(pm.response.code));",
+                  "if (pm.response.code === 202) {",
+                  "  checkPending(json);",
+                  "} else {",
+                  "  checkComplete(json);",
+                  "",
+                  "  pm.test(\"doctor search: cardiology and doctor fields preserved\", () => {",
+                  "    pm.expect([\"doctor_search\", \"specialty_search\"]).to.include(json.ai.intent);",
+                  "    pm.expect(json.ai.specialty && json.ai.specialty.id).to.eql(\"cardiology\");",
+                  "    json.ai.recommended_doctors.forEach((d) => {",
+                  "      pm.expect(d).to.have.property(\"doctor_id\");",
+                  "      pm.expect(d).to.have.property(\"name\");",
+                  "    });",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "English doctor search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"I need a cardiologist\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{backendBaseUrl}}/ai/chat",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "chat"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function checkComplete(json) {",
+                  "  pm.test(\"complete: success, reply and structured ai\", () => {",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "    pm.expect(json.status).to.eql(\"complete\");",
+                  "    pm.expect(json.reply).to.be.a(\"string\").and.not.empty;",
+                  "    [\"request_id\", \"status\", \"intent\", \"language\", \"content\", \"medical\", \"follow_up\", \"specialty\", \"recommended_doctors\"]",
+                  "      .forEach((k) => pm.expect(json.ai, \"ai.\" + k).to.have.property(k));",
+                  "    pm.expect(json.ai.recommended_doctors).to.be.an(\"array\");",
+                  "  });",
+                  "}",
+                  "function checkPending(json) {",
+                  "  pm.test(\"pending: job id saved for polling\", () => {",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "    pm.expect(json.status).to.eql(\"pending\");",
+                  "    pm.expect(json.job_id).to.match(/^fc-[A-Za-z0-9]{8,64}$/);",
+                  "    pm.expect(json.reply).to.be.a(\"string\").and.not.empty;",
+                  "  });",
+                  "  pm.environment.set(\"job_id\", json.job_id);",
+                  "}",
+                  "const json = pm.response.json();",
+                  "pm.test(\"HTTP 200 (complete) or 202 (pending)\", () => pm.expect([200, 202]).to.include(pm.response.code));",
+                  "if (pm.response.code === 202) {",
+                  "  checkPending(json);",
+                  "} else {",
+                  "  checkComplete(json);",
+                  "",
+                  "  pm.test(\"doctor search: cardiology and doctor fields preserved\", () => {",
+                  "    pm.expect([\"doctor_search\", \"specialty_search\"]).to.include(json.ai.intent);",
+                  "    pm.expect(json.ai.specialty && json.ai.specialty.id).to.eql(\"cardiology\");",
+                  "    json.ai.recommended_doctors.forEach((d) => {",
+                  "      pm.expect(d).to.have.property(\"doctor_id\");",
+                  "      pm.expect(d).to.have.property(\"name\");",
+                  "    });",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Symptom query",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"عندي صداع من امبارح\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{backendBaseUrl}}/ai/chat",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "chat"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function checkComplete(json) {",
+                  "  pm.test(\"complete: success, reply and structured ai\", () => {",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "    pm.expect(json.status).to.eql(\"complete\");",
+                  "    pm.expect(json.reply).to.be.a(\"string\").and.not.empty;",
+                  "    [\"request_id\", \"status\", \"intent\", \"language\", \"content\", \"medical\", \"follow_up\", \"specialty\", \"recommended_doctors\"]",
+                  "      .forEach((k) => pm.expect(json.ai, \"ai.\" + k).to.have.property(k));",
+                  "    pm.expect(json.ai.recommended_doctors).to.be.an(\"array\");",
+                  "  });",
+                  "}",
+                  "function checkPending(json) {",
+                  "  pm.test(\"pending: job id saved for polling\", () => {",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "    pm.expect(json.status).to.eql(\"pending\");",
+                  "    pm.expect(json.job_id).to.match(/^fc-[A-Za-z0-9]{8,64}$/);",
+                  "    pm.expect(json.reply).to.be.a(\"string\").and.not.empty;",
+                  "  });",
+                  "  pm.environment.set(\"job_id\", json.job_id);",
+                  "}",
+                  "const json = pm.response.json();",
+                  "pm.test(\"HTTP 200 (complete) or 202 (pending)\", () => pm.expect([200, 202]).to.include(pm.response.code));",
+                  "if (pm.response.code === 202) {",
+                  "  checkPending(json);",
+                  "} else {",
+                  "  checkComplete(json);",
+                  "",
+                  "  pm.test(\"medical analysis fields\", () => {",
+                  "    pm.expect(json.ai.medical).to.have.property(\"urgency\");",
+                  "    pm.expect(json.ai.follow_up).to.have.property(\"needed\");",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Async submit (stores job_id)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"عندي كحة من أسبوع\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{backendBaseUrl}}/ai/chat",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "chat"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function checkComplete(json) {",
+                  "  pm.test(\"complete: success, reply and structured ai\", () => {",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "    pm.expect(json.status).to.eql(\"complete\");",
+                  "    pm.expect(json.reply).to.be.a(\"string\").and.not.empty;",
+                  "    [\"request_id\", \"status\", \"intent\", \"language\", \"content\", \"medical\", \"follow_up\", \"specialty\", \"recommended_doctors\"]",
+                  "      .forEach((k) => pm.expect(json.ai, \"ai.\" + k).to.have.property(k));",
+                  "    pm.expect(json.ai.recommended_doctors).to.be.an(\"array\");",
+                  "  });",
+                  "}",
+                  "function checkPending(json) {",
+                  "  pm.test(\"pending: job id saved for polling\", () => {",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "    pm.expect(json.status).to.eql(\"pending\");",
+                  "    pm.expect(json.job_id).to.match(/^fc-[A-Za-z0-9]{8,64}$/);",
+                  "    pm.expect(json.reply).to.be.a(\"string\").and.not.empty;",
+                  "  });",
+                  "  pm.environment.set(\"job_id\", json.job_id);",
+                  "}",
+                  "pm.collectionVariables.set(\"pollAttempts\", \"0\");",
+                  "const json = pm.response.json();",
+                  "pm.test(\"HTTP 202 pending (or 200 if the GPU was warm)\", () => pm.expect([200, 202]).to.include(pm.response.code));",
+                  "if (pm.response.code === 202) checkPending(json); else checkComplete(json);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Async poll {{job_id}}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{backendBaseUrl}}/ai/chat/{{job_id}}",
+              "host": [
+                "{{backendBaseUrl}}"
+              ],
+              "path": [
+                "ai",
+                "chat",
+                "{{job_id}}"
+              ]
+            },
+            "description": "Same user (backendJwt) as the submit. In the Collection Runner this re-polls every 4 s while pending, up to 60 attempts (~4 min)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function checkComplete(json) {",
+                  "  pm.test(\"complete: success, reply and structured ai\", () => {",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "    pm.expect(json.status).to.eql(\"complete\");",
+                  "    pm.expect(json.reply).to.be.a(\"string\").and.not.empty;",
+                  "    [\"request_id\", \"status\", \"intent\", \"language\", \"content\", \"medical\", \"follow_up\", \"specialty\", \"recommended_doctors\"]",
+                  "      .forEach((k) => pm.expect(json.ai, \"ai.\" + k).to.have.property(k));",
+                  "    pm.expect(json.ai.recommended_doctors).to.be.an(\"array\");",
+                  "  });",
+                  "}",
+                  "function checkPending(json) {",
+                  "  pm.test(\"pending: job id saved for polling\", () => {",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "    pm.expect(json.status).to.eql(\"pending\");",
+                  "    pm.expect(json.job_id).to.match(/^fc-[A-Za-z0-9]{8,64}$/);",
+                  "    pm.expect(json.reply).to.be.a(\"string\").and.not.empty;",
+                  "  });",
+                  "  pm.environment.set(\"job_id\", json.job_id);",
+                  "}",
+                  "const json = pm.response.json();",
+                  "pm.test(\"HTTP 200 (complete) or 202 (pending)\", () => pm.expect([200, 202]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) {",
+                  "  checkComplete(json);",
+                  "} else {",
+                  "  pm.test(\"still pending for the same job\", () => {",
+                  "    pm.expect(json.status).to.eql(\"pending\");",
+                  "    pm.expect(json.job_id).to.eql(pm.environment.get(\"job_id\"));",
+                  "  });",
+                  "  const attempts = Number(pm.collectionVariables.get(\"pollAttempts\")) + 1;",
+                  "  pm.collectionVariables.set(\"pollAttempts\", String(attempts));",
+                  "  if (attempts < 60) {",
+                  "    setTimeout(() => {}, 4000);",
+                  "    pm.execution.setNextRequest(pm.info.requestName);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

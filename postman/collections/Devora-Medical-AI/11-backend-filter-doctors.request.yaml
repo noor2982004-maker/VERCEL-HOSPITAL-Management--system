@@ -1,0 +1,28 @@
+$kind: http-request
+name: Backend - Filter Doctors by Specialty
+order: 11000
+url: '{{doctorsApiBaseUrl}}/api/patient/filterdoctor?speciality_id={{speciality_id}}'
+method: GET
+headers:
+  - key: Accept
+    value: application/json
+queryParams:
+  - key: speciality_id
+    value: '{{speciality_id}}'
+    description: MongoDB _id of the specialty from the catalogue endpoint
+  - key: governorate
+    value: Cairo
+    description: 'Optional: exact case-sensitive governorate filter'
+    disabled: true
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200", function () {
+          pm.response.to.have.status(200);
+      });
+      pm.test("Response has success and data array", function () {
+          const json = pm.response.json();
+          pm.expect(json.success).to.be.true;
+          pm.expect(json.data).to.be.an("array");
+      });

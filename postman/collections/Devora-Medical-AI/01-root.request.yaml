@@ -1,0 +1,8 @@
+$kind: http-request
+name: Root
+order: 1000
+url: '{{baseUrl}}/'
+method: GET
+headers:
+  - key: Accept
+    value: application/json
