@@ -8,6 +8,7 @@ import { scheduleSummary } from "../utils/slots.js";
 import cloudinary from "../config/cloudinary.js";
 import DoctorDocument from "../models/documents_dr_images.js";
 import { handleDoctorFilesUpload } from "../middleware/upload.js";
+import { parseDate, isFuture, generateSlots, cairoNow } from "../utils/slots.js";
 
 import Review from "../models/review.js";
 import Appointment from "../models/appointment.js";
@@ -2766,7 +2767,7 @@ export const createSpeciality = async (req, res, next) => {
 
 
 
-export const globalSearch = async (req, res, next) => {
+export const oglobalSearch = async (req, res, next) => {
   try {
     const { search } = req.query;
 
@@ -3026,7 +3027,278 @@ export const updateAdminProfile = async (req, res, next) => {
 
 
 
+const normalizeAppointmentTime = (time) => {
+  if (typeof time !== "string") return time;
+
+  const trimmedTime = time.trim();
+
+  // Keep existing 24-hour format, e.g. 09:00 or 21:00
+  if (/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmedTime)) {
+    return trimmedTime;
+  }
+
+  // Convert 12-hour format, e.g. 9:00 AM or 9:00 PM
+  const match = trimmedTime.match(
+    /^(1[0-2]|0?[1-9]):([0-5]\d)\s*(AM|PM)$/i
+  );
+
+  if (!match) return time;
+
+  let hours = Number(match[1]);
+  const minutes = match[2];
+  const period = match[3].toUpperCase();
+
+  if (period === "AM" && hours === 12) {
+    hours = 0;
+  } else if (period === "PM" && hours !== 12) {
+    hours += 12;
+  }
+
+  return `${String(hours).padStart(2, "0")}:${minutes}`;
+};
 
 
 
 
+
+
+
+export const globalSearch = async (req, res, next) => {
+  try {
+    const { search } = req.query;
+
+    // Return empty results if search is less than 2 characters
+    if (!search || search.trim().length < 2) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          doctors: [],
+          specialties: [],
+        },
+      });
+    }
+
+    const searchRegex = new RegExp(search.trim(), "i");
+
+    // 1. Find matching doctor users
+    const matchingUsers = await User.find({
+      role: "doctor",
+      $or: [
+        { full_name: { $regex: searchRegex } },
+        { email: { $regex: searchRegex } },
+      ],
+    }).select("_id");
+
+    const userIds = matchingUsers.map((u) => u._id);
+
+    // 2. Fetch matching doctors with all required schedule data
+    const doctors = await Dr.find({
+      user_id: { $in: userIds },
+      is_active: true,
+      approval_status: "accepted",
+    })
+      .populate({
+        path: "user_id",
+        select: "full_name",
+      })
+      .populate({
+        path: "speciality_id",
+        select: "name active_status",
+        match: { active_status: true },
+      })
+      .select(
+        "image is_active user_id speciality_id schedule slot_duration_minutes days_off"
+      )
+      .limit(5);
+
+    // Exclude doctors with inactive specialities
+    const activeDoctors = doctors.filter(
+      (doctor) => doctor.speciality_id !== null
+    );
+
+    // 3. Calculate nearest available slots
+    const nearestSlots = new Map();
+
+    if (activeDoctors.length > 0) {
+      const todayDate = cairoNow().date;
+      const startDate = parseDate(todayDate);
+
+      const dates = [];
+
+      // Check today and the following 6 days
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(startDate);
+
+        date.setUTCDate(date.getUTCDate() + i);
+
+        dates.push(date.toISOString().slice(0, 10));
+      }
+
+      const endDate = new Date(startDate);
+
+      endDate.setUTCDate(endDate.getUTCDate() + 7);
+
+      // Get upcoming appointments
+      const appointments = await Appointment.find({
+        doctor_id: {
+          $in: activeDoctors.map((doctor) => doctor._id),
+        },
+        status: "upcoming",
+        appointment_date: {
+          $gte: startDate,
+          $lt: endDate,
+        },
+      }).select(
+        "doctor_id appointment_date appointment_time"
+      );
+
+      // Store booked slots
+      const bookedSlots = new Set(
+        appointments.map((appointment) => {
+          const dateKey = appointment.appointment_date
+            .toISOString()
+            .slice(0, 10);
+
+          return `${appointment.doctor_id}_${dateKey}_${appointment.appointment_time}`;
+        })
+      );
+
+      // Find nearest available slot for each doctor
+      for (const doctor of activeDoctors) {
+        let nearestSlot = null;
+
+        for (const dateKey of dates) {
+          // Check whether the doctor works on this day
+          const dateObject = parseDate(dateKey);
+          const dayNumber = dateObject.getUTCDay();
+
+          const workingDays =
+            doctor.schedule?.working_days || [];
+
+          if (!workingDays.includes(dayNumber)) {
+            continue;
+          }
+
+          // Check doctor's days off
+          const isDayOff = (doctor.days_off || []).some(
+            (dayOff) => {
+              const offDate = new Date(dayOff);
+
+              return (
+                offDate >= dateObject &&
+                offDate <
+                  new Date(dateObject.getTime() + 86400000)
+              );
+            }
+          );
+
+          if (isDayOff) {
+            continue;
+          }
+
+          const slots = generateSlots(doctor, dateKey);
+
+          for (const time of slots) {
+            // Ignore past slots
+            if (!isFuture(dateKey, time)) {
+              continue;
+            }
+
+            const slotKey =
+              `${doctor._id}_${dateKey}_${time}`;
+
+            // Ignore booked slots
+            if (bookedSlots.has(slotKey)) {
+              continue;
+            }
+
+            nearestSlot = {
+              date: dateKey,
+              time: time,
+            };
+
+            break;
+          }
+
+          if (nearestSlot) {
+            break;
+          }
+        }
+
+        nearestSlots.set(
+          doctor._id.toString(),
+          nearestSlot
+        );
+      }
+    }
+
+    // 4. Sort doctors by nearest available slot
+    const sortedDoctors = [...activeDoctors];
+
+    sortedDoctors.sort((a, b) => {
+      const slotA = nearestSlots.get(
+        a._id.toString()
+      );
+
+      const slotB = nearestSlots.get(
+        b._id.toString()
+      );
+
+      // Doctors without available slots go last
+      if (!slotA && !slotB) return 0;
+      if (!slotA) return 1;
+      if (!slotB) return -1;
+
+      // Compare dates first
+      const dateComparison =
+        slotA.date.localeCompare(slotB.date);
+
+      if (dateComparison !== 0) {
+        return dateComparison;
+      }
+
+      // Compare times
+      return slotA.time.localeCompare(slotB.time);
+    });
+
+    // 5. Format doctors response
+    const formattedDoctors = sortedDoctors.map((doc) => ({
+      doctor_id: doc._id,
+      name: doc.user_id?.full_name ?? null,
+      image: doc.image ?? null,
+      specialty: doc.speciality_id?.name ?? null,
+
+      nearest_available_slot:
+        nearestSlots.get(doc._id.toString()) || null,
+    }));
+
+    // 6. Search specialties (unchanged)
+    const specialties = await Speciality.find({
+      $or: [
+        { name: { $regex: searchRegex } },
+        { description: { $regex: searchRegex } },
+      ],
+    })
+      .select("name description")
+      .limit(5)
+      .lean();
+
+    const formattedSpecialties = specialties.map((spec) => ({
+      speciality_id: spec._id,
+      name: spec.name,
+      description: spec.description ?? null,
+    }));
+
+    // 7. Return results
+    return res.status(200).json({
+      success: true,
+      data: {
+        doctors: formattedDoctors,
+        specialties: formattedSpecialties,
+      },
+    });
+
+  } catch (err) {
+    next(err);
+  }
+};

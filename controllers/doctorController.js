@@ -3,6 +3,12 @@ import User from "../models/user.js";
 import {createAdminSchema,} from "../validators/authValidator.js";
 import Dr from "../models/doctor.js";
 import Speciality from "../models/speciality.js";
+import Appointment from "../models/appointment.js";
+import { parseDate, isFuture, generateSlots, scheduleSummary,cairoNow } from "../utils/slots.js";
+
+
+
+
 
 function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -284,7 +290,7 @@ export const createDoctor = async (req, res, next) => {
 };
 //for patients:
 
-export const getacceptedDoctors = async (req, res, next) => {
+export const ogetacceptedDoctors = async (req, res, next) => {
   try {
     const {
       today,
@@ -375,6 +381,283 @@ export const getacceptedDoctors = async (req, res, next) => {
     next(err);
   }
 };
+
+////////////////////////////////////////////////
+
+
+
+
+export const getacceptedDoctors = async (req, res, next) => {
+  try {
+    const {
+      today,
+      speciality_id,
+      governorate,
+      sort_by,
+      sort,
+    } = req.query;
+
+    const sortOption = sort_by || sort || "rating";
+
+    const allowedSortOptions = [
+      "rating",
+      "experience",
+      "fee_asc",
+      "nearest_slot",
+    ];
+
+    if (!allowedSortOptions.includes(sortOption)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid sort option",
+      });
+    }
+
+    const cairoDate = cairoNow().date;
+    const startOfToday = parseDate(cairoDate);
+    const startOfTomorrow = new Date(startOfToday);
+
+    startOfTomorrow.setUTCDate(
+      startOfTomorrow.getUTCDate() + 1
+    );
+
+    const todayNumber = startOfToday.getUTCDay();
+
+    // Base filter
+    const filter = {
+      is_active: true,
+      approval_status: "accepted",
+    };
+
+    if (speciality_id) {
+      filter.speciality_id = speciality_id;
+    }
+
+    if (governorate) {
+      filter.governorate = governorate;
+    }
+
+    const doctors = await Dr.find(filter)
+      .populate("user_id", "full_name")
+      .populate({
+        path: "speciality_id",
+        select: "name active_status",
+        match: { active_status: true },
+      })
+      .select(
+        "user_id speciality_id title image consultation_fee rating_average years_of_experience area governorate schedule slot_duration_minutes days_off is_active"
+      );
+
+    let activeSpecialityDoctors = doctors.filter(
+      (doctor) => doctor.speciality_id !== null
+    );
+
+    const doctorsWithTodayStatus = activeSpecialityDoctors.map(
+      (doctor) => {
+        const workingDays =
+          doctor.schedule?.working_days || [];
+
+        const worksToday =
+          workingDays.includes(todayNumber) &&
+          !(doctor.days_off || []).some((dayOff) => {
+            const offDate = new Date(dayOff);
+
+            return (
+              offDate >= startOfToday &&
+              offDate < startOfTomorrow
+            );
+          });
+
+        return {
+          doctor,
+          worksToday,
+        };
+      }
+    );
+
+    if (today === "true") {
+      activeSpecialityDoctors = doctorsWithTodayStatus
+        .filter((item) => item.worksToday)
+        .map((item) => item.doctor);
+    }
+
+    const nearestSlots = new Map();
+
+    if (activeSpecialityDoctors.length > 0) {
+      const dates = [];
+
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(startOfToday);
+
+        date.setUTCDate(date.getUTCDate() + i);
+
+        dates.push(date.toISOString().slice(0, 10));
+      }
+
+      const endDate = new Date(startOfToday);
+
+      endDate.setUTCDate(endDate.getUTCDate() + 7);
+
+      const appointments = await Appointment.find({
+        doctor_id: {
+          $in: activeSpecialityDoctors.map(
+            (doctor) => doctor._id
+          ),
+        },
+        status: "upcoming",
+        appointment_date: {
+          $gte: startOfToday,
+          $lt: endDate,
+        },
+      }).select(
+        "doctor_id appointment_date appointment_time"
+      );
+
+      const bookedSlots = new Set(
+        appointments.map((appointment) => {
+          const dateKey = appointment.appointment_date
+            .toISOString()
+            .slice(0, 10);
+
+          return `${appointment.doctor_id}_${dateKey}_${appointment.appointment_time}`;
+        })
+      );
+
+      for (const doctor of activeSpecialityDoctors) {
+        let nearestSlot = null;
+
+        for (const dateKey of dates) {
+          const slots = generateSlots(doctor, dateKey);
+
+          for (const time of slots) {
+            // Ignore past slots
+            if (!isFuture(dateKey, time)) {
+              continue;
+            }
+
+            const slotKey =
+              `${doctor._id}_${dateKey}_${time}`;
+
+            // Ignore booked slots
+            if (bookedSlots.has(slotKey)) {
+              continue;
+            }
+
+            nearestSlot = {
+              date: dateKey,
+              time,
+            };
+
+            break;
+          }
+
+          if (nearestSlot) {
+            break;
+          }
+        }
+
+        nearestSlots.set(
+          doctor._id.toString(),
+          nearestSlot
+        );
+      }
+    }
+
+    const sortedDoctors = [...activeSpecialityDoctors];
+
+    switch (sortOption) {
+      case "rating":
+        sortedDoctors.sort(
+          (a, b) =>
+            (b.rating_average || 0) -
+            (a.rating_average || 0)
+        );
+        break;
+
+      case "experience":
+        sortedDoctors.sort(
+          (a, b) =>
+            (b.years_of_experience || 0) -
+            (a.years_of_experience || 0)
+        );
+        break;
+
+      case "fee_asc":
+        sortedDoctors.sort(
+          (a, b) =>
+            (a.consultation_fee || 0) -
+            (b.consultation_fee || 0)
+        );
+        break;
+
+      case "nearest_slot":
+        sortedDoctors.sort((a, b) => {
+          const slotA = nearestSlots.get(
+            a._id.toString()
+          );
+
+          const slotB = nearestSlots.get(
+            b._id.toString()
+          );
+
+          if (!slotA && !slotB) return 0;
+          if (!slotA) return 1;
+          if (!slotB) return -1;
+
+          // Compare dates first
+          const dateComparison =
+            slotA.date.localeCompare(slotB.date);
+
+          if (dateComparison !== 0) {
+            return dateComparison;
+          }
+
+          return slotA.time.localeCompare(slotB.time);
+        });
+        break;
+    }
+
+    const result = sortedDoctors.map((doctor) => {
+      const doctorTodayStatus =
+        doctorsWithTodayStatus.find(
+          (item) =>
+            item.doctor._id.toString() ===
+            doctor._id.toString()
+        );
+
+      return {
+        doctor_id: doctor._id,
+        name: doctor.user_id?.full_name,
+        speciality: doctor.speciality_id?.name,
+        title: doctor.title,
+        image: doctor.image,
+        rating: doctor.rating_average,
+        years_of_experience: doctor.years_of_experience,
+        area: doctor.area,
+        governorate: doctor.governorate,
+        consultation_fee: doctor.consultation_fee,
+
+        works_today:
+          doctorTodayStatus?.worksToday ?? false,
+
+        nearest_available_slot:
+          nearestSlots.get(doctor._id.toString()) || null,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: result.length,
+      data: result,
+    });
+
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+/////////////////////////////////////////////////////
 
 export const getDoctorById = async (req, res, next) => {
   try {

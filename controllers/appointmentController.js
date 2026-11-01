@@ -8,7 +8,7 @@ import {
   listAppointmentsSchema,
   bookAppointmentSchema,
 } from "../validators/appointmentValidator.js";
-import { parseDate, isFuture, generateSlots } from "../utils/slots.js";
+import { parseDate, isFuture, generateSlots, cairoNow} from "../utils/slots.js";
 
 const BOOKING_PREFIX = "MI3";
 

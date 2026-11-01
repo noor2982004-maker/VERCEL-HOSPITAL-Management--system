@@ -1,9 +1,12 @@
 import { Router } from "express";
 import { getacceptedDoctors, getDoctorById } from "../controllers/doctorController.js";
 import{getAllSpecialities} from"../controllers/specialtyController.js";
-const router = Router();
+import {globalSearch} from "../controllers/adminController.js";
 
+const router = Router();
+router.get("/mainsearch",globalSearch)
 router.get("/allspecialities", getAllSpecialities);
-router.get("/", getacceptedDoctors);
+router.get("/", getacceptedDoctors);//all,governorate,today?,specialty
 router.get("/:id", getDoctorById);
+
 export default router;
